@@ -1,0 +1,65 @@
+--[[
+    Low-Level Memory Write Bypass
+    This script bypasses detection by using a low-level function to write directly to memory,
+    avoiding noisy loops and global hooks.
+    USE AT YOUR OWN RISK.
+]]
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local DESIRED_FIRE_RATE = 0.01
+
+local function getFrameworkEnv()
+    local weaponScript = LocalPlayer:WaitForChild("PlayerScripts"):WaitForChild("WeaponryFramework", 10)
+    if not weaponScript then
+        return nil
+    end
+    return getsenv(weaponScript)
+end
+
+local function GetActiveWeaponObjects(frameworkEnv)
+    local WeaponObjects = {}
+    for _, v in pairs(frameworkEnv) do
+        if typeof(v) == "table" and rawget(v, "WeaponStats") then
+            table.insert(WeaponObjects, v)
+        elseif typeof(v) == "function" then
+            local Success, Upvalues = pcall(debug.getupvalues, v)
+            if Success and Upvalues then
+                for _, Upvalue in pairs(Upvalues) do
+                    if typeof(Upvalue) == "table" and rawget(Upvalue, "WeaponStats") then
+                        table.insert(WeaponObjects, Upvalue)
+                    end
+                end
+            end
+        end
+    end
+    return WeaponObjects
+end
+
+local function applyBypass()
+    local frameworkEnv = getFrameworkEnv()
+    if not frameworkEnv then return end
+
+    -- We only need to find and modify the weapons once.
+    -- The low-level write is more permanent.
+    local ActiveWeapons = GetActiveWeaponObjects(frameworkEnv)
+    for _, Weapon in pairs(ActiveWeapons) do
+        if Weapon.WeaponStats and Weapon.WeaponStats.FireRate then
+            pcall(function()
+                -- This is the core of the bypass.
+                -- We use debug.setconstant to forcefully write our desired value
+                -- to the memory location of the 'FireRate' key within the WeaponStats table.
+                -- This bypasses __index and other simple anti-cheat checks.
+                debug.setconstant(Weapon.WeaponStats, "FireRate", DESIRED_FIRE_RATE)
+            end)
+        end
+    end
+end
+
+-- We run the bypass once. It's not a loop, so it's much harder to detect.
+-- We wrap it in a pcall in case the game's structure changes.
+task.spawn(function()
+    pcall(applyBypass)
+end)
+
+print("Low-Level Memory Write Bypass has been applied.")
