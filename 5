@@ -1,0 +1,73 @@
+--[[
+    Advanced Gun Modifier (Metatable Hook Bypass)
+    This script intercepts value reads instead of changing values directly.
+    USE AT YOUR OWN RISK - BAN RISK IS HIGH.
+]]
+
+-- Securely get functions and hide them from global scope
+local getgc = getgc or debug.getregistry
+local getrawmetatable = getrawmetatable or function(t) return getmetatable(t) end
+local setreadonly = setreadonly or function() end
+
+-- The desired Time Between Shots (TBS) for a very high fire rate.
+local DESIRED_TBS = 0.041
+
+local function applyBypass()
+    -- Hook the modules in ReplicatedStorage first
+    local gunSettings = game:GetService("ReplicatedStorage"):FindFirstChild("GunSettings")
+    if gunSettings then
+        for _, module in pairs(gunSettings:GetChildren()) do
+            if module:IsA("ModuleScript") then
+                local success, gunTable = pcall(require, module)
+                if success and type(gunTable) == "table" and rawget(gunTable, "TBS") then
+                    local mt = getrawmetatable(gunTable)
+                    if mt then
+                        setreadonly(mt, false)
+                        mt.__index = newcclosure(function(t, k)
+                            if k == "TBS" then
+                                return DESIRED_TBS -- Return our fake value
+                            end
+                            return rawget(t, k) -- Return the real value for anything else
+                        end)
+                        setreadonly(mt, true)
+                    end
+                end
+            end
+        end
+    end
+
+    -- Now, hook any live instances found in the game's memory
+    for _, obj in pairs(getgc(true)) do
+        if type(obj) == "table" and rawget(obj, "TBS") and rawget(obj, "Ammo") then
+            local mt = getrawmetatable(obj)
+            if mt and not mt.HookedTBS then -- Check if we already hooked this to avoid errors
+                setreadonly(mt, false)
+                local oldIndex = mt.__index
+                mt.__index = newcclosure(function(t, k)
+                    if k == "TBS" then
+                        return DESIRED_TBS -- Return our fake value
+                    end
+                    -- If there was an old __index, use it. Otherwise, use rawget.
+                    if oldIndex then
+                        return oldIndex(t, k)
+                    else
+                        return rawget(t, k)
+                    end
+                end)
+                mt.HookedTBS = true -- Mark as hooked
+                setreadonly(mt, true)
+            end
+        end
+    end
+end
+
+-- Run the bypass once
+task.spawn(applyBypass)
+
+-- Also run it when a new tool is added to catch any new instances
+game:GetService("Players").LocalPlayer.Backpack.ChildAdded:Connect(function()
+    task.wait(0.2) -- Wait a moment for the tool to be fully initialized
+    task.spawn(applyBypass)
+end)
+
+print("Metatable Hook Bypass has been applied.")
