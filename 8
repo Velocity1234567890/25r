@@ -1,0 +1,44 @@
+--[[
+    Game Loop Hijacker Bypass (Creative Method)
+    This script hijacks the game's main loop to silently enforce changes at a low level.
+    It bypasses simple anti-cheats by constantly overwriting values every frame.
+    USE AT YOUR OWN RISK - EXTREMELY HIGH BAN RISK.
+]]
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local humanoid = character:WaitForChild("Humanoid")
+
+-- The desired Time Between Shots (TBS) for a very high fire rate.
+local DESIRED_TBS = 0.041
+
+-- This is our core function. It will be called every frame.
+local function onHeartbeat()
+    -- Only run if the player is alive and holding a tool
+    if humanoid.Health > 0 and humanoid.Parent then
+        local equippedTool = character:FindFirstChildOfClass("Tool")
+        if equippedTool then
+            -- Scan through all game objects (the "gc" or garbage collection)
+            for _, obj in pairs(getgc(true)) do
+                -- We are looking for a table that looks like a gun's stats
+                if type(obj) == "table" and rawget(obj, "TBS") then
+                    -- We use debug.setregistry to forcefully change the value.
+                    -- This is a low-level function that can bypass simple checks.
+                    -- It's more powerful than a simple assignment like obj.TBS = ...
+                    debug.setregistry(obj, "TBS", DESIRED_TBS)
+                end
+            end
+        end
+    end
+end
+
+-- Connect our function to the Heartbeat event.
+-- This is the game's main loop, running ~60 times per second.
+-- Our code will now run constantly and silently in the background.
+RunService.Heartbeat:Connect(onHeartbeat)
+
+print("Game Loop Hijacker script has been loaded and is running in the background.")
+print("Equip a tool to apply the modifications.")
