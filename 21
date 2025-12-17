@@ -1,0 +1,84 @@
+--[[
+    Brute-Force Heartbeat Hijack Bypass
+    This script uses the fastest loop and the most aggressive techniques to
+    forcefully overwrite the FireRate on every frame.
+    USE AT YOUR OWN RISK.
+]]
+
+--> Services:
+local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
+
+--> Variables:
+local LocalPlayer = Players.LocalPlayer
+local DESIRED_FIRE_RATE = 0.08
+
+--> getsenv() is a table that takes in a local script as a paraneter
+--> It returns a table that contains a list of global functions, tables and variables in that script
+local WeaponryFramework = getsenv(LocalPlayer.PlayerScripts.WeaponryFramework)
+
+--> Initializing our local variables
+local WeaponPropertiesTable1
+local WeaponPropertiesTable2
+
+-- We connect to Heartbeat, which is the fastest and most fundamental loop in Roblox.
+RunService.Heartbeat:Connect(function()
+    for I, V in pairs(WeaponryFramework) do --> Iterating through the weaponry framework's script enviroment
+
+        if I == "InventoryManager" then
+            local InventoryManagerFunc = V --> A function that manages your inventory
+
+            for I, V in pairs(debug.getupvalues(InventoryManagerFunc)) do
+                if type(V) == "table" then --> If one of the upvalues is a table then this condition evaluates to true
+                    for I, V in pairs(V) do --> Iterating through that table
+
+                        if type(V) == "table" and V.WeaponStats then --> If a value in the table is a table with WeaponStats
+                            if I == 1 then
+                                WeaponPropertiesTable1 = V
+                            elseif I == 2 then
+                                WeaponPropertiesTable2 = V
+                            end
+                            
+                            local currentWeapon = V
+                            if currentWeapon and currentWeapon.WeaponStats then
+                                pcall(function()
+                                    --> THIS IS THE CORE OF THE BYPASS
+                                    --> On every frame, we will forcefully take control of the metatable.
+                                    local statsTable = currentWeapon.WeaponStats
+                                    local mt = getrawmetatable(statsTable) or {}
+                                    
+                                    -- Force the metatable to be editable
+                                    setreadonly(mt, false)
+
+                                    -- Overwrite the __index metamethod to control what happens when a value is read
+                                    mt.__index = newcclosure(function(t, k)
+                                        if k == "FireRate" then
+                                            return DESIRED_FIRE_RATE -- Always return our desired value
+                                        end
+                                        return rawget(t, k) -- Return the real value for anything else
+                                    end)
+
+                                    -- Overwrite the __newindex metamethod to control what happens when a value is set
+                                    -- This prevents the anti-cheat from changing the FireRate back
+                                    mt.__newindex = newcclosure(function(t, k, v)
+                                        if k == "FireRate" then
+                                            -- Do nothing, preventing the anti-cheat from setting it
+                                            return
+                                        end
+                                        rawset(t, k, v) -- Allow other values to be set normally
+                                    end)
+
+                                    -- Re-apply the metatable to the table and lock it
+                                    setreadonly(statsTable, true)
+                                    setreadonly(mt, true)
+                                end)
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+end)
+
+print("Brute-Force Heartbeat Hijack Bypass has been loaded.")
