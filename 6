@@ -1,0 +1,70 @@
+--[[
+    Targeted Gun Modifier
+    This script waits for a tool to be equipped and then directly modifies its stats.
+    This is often more effective than modifying all guns at once.
+    USE AT YOUR OWN RISK.
+]]
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local humanoid = character:WaitForChild("Humanoid")
+
+-- The desired Time Between Shots (TBS) for a very high fire rate.
+local DESIRED_TBS = 0.01
+
+-- This function will find and modify the gun's stats table
+local function modifyGun(tool)
+    -- First, try to find the stats table associated with the tool in memory
+    -- This is the most likely place the game will look for stats
+    for _, obj in pairs(getgc(true)) do
+        if type(obj) == "table" and rawget(obj, "TBS") then
+            -- We found a table with TBS. Now let's see if it's the right one.
+            -- We check for other common gun stats to be sure.
+            if rawget(obj, "Ammo") and rawget(obj, "CurrentAmmo") and rawget(obj, "MaxAmmo") then
+                -- This looks like our gun's stat table. Force the value.
+                obj.TBS = DESIRED_TBS
+                print("Found and modified a gun's stat table in memory.")
+            end
+        end
+    end
+
+    -- As a backup, also try to modify the base module for this gun
+    local moduleName = tool.Name
+    local gunModule = ReplicatedStorage:FindFirstChild("GunSettings"):FindFirstChild(moduleName)
+    if gunModule and gunModule:IsA("ModuleScript") then
+        local success, gunTable = pcall(require, gunModule)
+        if success and type(gunTable) == "table" and gunTable.TBS then
+            gunTable.TBS = DESIRED_TBS
+            print("Modified the base gun module for:", moduleName)
+        end
+    end
+end
+
+-- The core of the script: connect to the tool equipped event
+humanoid.Equipped:Connect(function(tool)
+    -- We only care about tools that are likely guns
+    if tool:IsA("Tool") and tool:FindFirstChild("Handle") then
+        print("Tool equipped:", tool.Name, "- Applying modifications.")
+        -- Run our modification function
+        modifyGun(tool)
+
+        -- To be extra safe and bypass anti-cheats that revert changes,
+        -- we will re-apply the value every frame for a few seconds.
+        local connection
+        local startTime = tick()
+        connection = RunService.Heartbeat:Connect(function()
+            if tick() - startTime > 3 then -- Stop after 3 seconds
+                connection:Disconnect()
+                print("Stopped re-applying stats for", tool.Name)
+                return
+            end
+            modifyGun(tool) -- Keep forcing the change
+        end)
+    end
+end)
+
+print("Targeted Gun Modifier script loaded. Equip a tool to activate.")
