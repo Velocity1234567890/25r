@@ -1,0 +1,87 @@
+--[[
+    Event Hijacker Bypass (Creative Method)
+    This script replaces a tool's fire function with a custom, high-speed version.
+    It bypasses TBS by ignoring it completely.
+    USE AT YOUR OWN RISK - EXTREMELY HIGH BAN RISK.
+]]
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
+
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local humanoid = character:WaitForChild("Humanoid")
+
+-- Configuration
+local FIRE_RATE = 0.01 -- The delay between our custom shots. Lower is faster. 0.01 is extremely fast.
+local MAX_AMMO_TO_INFINITE = 999999 -- Sets your ammo to this number.
+
+-- This is our custom, super-fast firing function
+local function createRapidFireFunction(tool, fireEvent)
+    -- Create a new function to replace the tool's original Activate function
+    local rapidFireFunction = function()
+        -- First, let's give ourselves infinite ammo so we don't run out
+        for _, obj in pairs(getgc(true)) do
+            if type(obj) == "table" and rawget(obj, "Ammo") and rawget(obj, "CurrentAmmo") then
+                -- Check if this table belongs to our equipped tool
+                if tool:FindFirstChildWhichIsA("RemoteEvent") == fireEvent then
+                    obj.Ammo = MAX_AMMO_TO_INFINITE
+                    obj.CurrentAmmo = MAX_AMMO_TO_INFINITE
+                    break
+                end
+            end
+        end
+
+        -- Create a loop that fires the weapon as fast as our FIRE_RATE allows
+        local isFiring = true
+        task.spawn(function()
+            while isFiring and tool.Parent == character do
+                -- Fire the server's RemoteEvent
+                fireEvent:FireServer()
+                task.wait(FIRE_RATE)
+            end
+        end)
+
+        -- Wait for the player to release the mouse button
+        local connection
+        connection = RunService.Heartbeat:Connect(function()
+            if not userinputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
+                isFiring = false
+                if connection then
+                    connection:Disconnect()
+                end
+            end
+        end)
+    end
+
+    return rapidFireFunction
+end
+
+
+-- The main logic runs when a tool is equipped
+humanoid.Equipped:Connect(function(tool)
+    if not tool or not tool:IsA("Tool") then return end
+
+    print("Tool Equipped:", tool.Name, "- Searching for RemoteEvent to hijack...")
+
+    -- Find the RemoteEvent inside the tool that is used for firing
+    local fireEvent = tool:FindFirstChildWhichIsA("RemoteEvent")
+    if fireEvent then
+        print("Found RemoteEvent:", fireEvent.Name, "- Hijacking its function.")
+
+        -- Create our rapid fire function
+        local customFireFunction = createRapidFireFunction(tool, fireEvent)
+
+        -- Hijack the tool's default Activate event
+        -- This makes it so when you click, our function runs instead of the game's
+        tool.Activated:Connect(customFireFunction)
+
+        print("Successfully hijacked", tool.Name)
+    else
+        print("Could not find a RemoteEvent in", tool.Name, "- Hijack failed.")
+    end
+end)
+
+print("Event Hijacker script loaded. Equip a tool to activate.")
