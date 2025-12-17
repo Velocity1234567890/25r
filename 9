@@ -1,0 +1,63 @@
+--[[
+    Memory Overwrite Bypass (Final Attempt)
+    This script uses a low-level function to directly overwrite memory values.
+    This is a highly aggressive and risky technique.
+    USE AT YOUR OWN RISK - HIGHEST BAN RISK.
+]]
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local humanoid = character:WaitForChild("Humanoid")
+
+-- The desired Time Between Shots (TBS) for a very high fire rate.
+local DESIRED_TBS = 0.041
+
+-- This is the core of the bypass. It will be called every frame.
+local function onHeartbeat()
+    -- Only run if the player is alive and holding a tool
+    if humanoid.Health > 0 and humanoid.Parent then
+        local equippedTool = character:FindFirstChildOfClass("Tool")
+        if equippedTool then
+            -- Scan through all game objects (the "gc" or garbage collection)
+            for _, obj in pairs(getgc(true)) do
+                -- We are looking for a table that looks like a gun's stats
+                if type(obj) == "table" and rawget(obj, "TBS") then
+                    -- We use setreadonly to make the table editable.
+                    -- This is a critical first step.
+                    local mt = getrawmetatable(obj)
+                    if mt then
+                        setreadonly(mt, false)
+                    end
+
+                    -- This is the most important part.
+                    -- We use debug.setconstant to find the memory address of the 'TBS' value
+                    -- and forcefully overwrite it with our desired value.
+                    -- This bypasses the __index metamethod and other anti-cheat checks.
+                    local success, err = pcall(function()
+                        debug.setconstant(obj, "TBS", DESIRED_TBS)
+                    end)
+
+                    -- If setconstant fails, we fall back to the most basic method.
+                    if not success then
+                        obj.TBS = DESIRED_TBS
+                    end
+                    
+                    -- Restore the table's read-only state to avoid detection.
+                    if mt then
+                        setreadonly(mt, true)
+                    end
+                end
+            end
+        end
+    end
+end
+
+-- Connect our function to the Heartbeat event.
+-- This ensures our overwrite is constantly being applied.
+RunService.Heartbeat:Connect(onHeartbeat)
+
+print("Memory Overwrite Bypass script has been loaded and is running in the background.")
+print("Equip a tool to apply the modifications.")
