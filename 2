@@ -1,0 +1,100 @@
+--[[
+    Advanced Gun Modifier with Anti-Cheat Bypass
+    USE AT YOUR OWN RISK - HIGH BAN RISK
+]]
+
+-- Securely get required functions and hide them from the global environment
+local _getgc = getgc or debug.getregistry
+local _getrawmetatable = getrawmetatable or function(t) return getmetatable(t) end
+local _readtable = readtable or function(t) return t end
+local _setreadonly = setreadonly or function() end
+
+-- Clean up global traces to avoid detection
+_G.getgc = nil
+_G.getrawmetatable = nil
+_G.readtable = nil
+_G.setreadonly = nil
+
+-- Wait for the game to fully load
+task.wait(2)
+
+local Player = game:GetService("Players").LocalPlayer
+local GunSettings = game:GetService("ReplicatedStorage"):FindFirstChild("GunSettings")
+
+if not GunSettings then
+    warn("GunSettings folder not found. Script may not work.")
+    return
+end
+
+-- Main function to modify gun stats stealthily
+local function applyGunBypass()
+    -- First, modify all existing gun modules in ReplicatedStorage
+    for _, module in pairs(GunSettings:GetChildren()) do
+        if module:IsA("ModuleScript") then
+            local success, gunModule = pcall(require, module)
+            if success and type(gunModule) == "table" and gunModule.TBS then
+                local mt = _getrawmetatable(gunModule)
+                if mt then
+                    _setreadonly(mt, false)
+                    -- Hook the __index metamethod to intercept reads
+                    local oldIndex = mt.__index
+                    mt.__index = function(t, k)
+                        if k == "TBS" then
+                            return 0.041 -- Return our desired fire rate
+                        end
+                        return oldIndex(t, k)
+                    end
+                    _setreadonly(mt, true)
+                end
+            end
+        end
+    end
+
+    -- Next, scan the garbage collector for live gun instances and hook them too
+    for _, v in pairs(_getgc(true)) do
+        if type(v) == "table" and rawget(v, "Ammo") and rawget(v, "CurrentAmmo") then
+            local mt = _getrawmetatable(v)
+            if mt then
+                _setreadonly(mt, false)
+                local oldIndex = mt.__index
+                mt.__index = function(t, k)
+                    if k == "TBS" then
+                        return 0.041 -- Return our desired fire rate
+                    end
+                    return oldIndex(t, k)
+                end
+                _setreadonly(mt, true)
+            end
+        end
+    end
+end
+
+-- Run the bypass
+task.spawn(applyGunBypass)
+
+-- Ensure tools are unequipped and their identifiers are removed
+local function cleanTools()
+    local Character = Player.Character
+    if Character then
+        local Humanoid = Character:FindFirstChildOfClass("Humanoid")
+        if Humanoid then
+            Humanoid:UnequipTools()
+        end
+    end
+    for _, tool in pairs(Player.Backpack:GetChildren()) do
+        if tool:IsA("Tool") then
+            local identifier = tool:FindFirstChild("identifier")
+            if identifier then
+                identifier:Destroy()
+            end
+        end
+    end
+end
+
+-- Run the initial cleanup
+task.spawn(cleanTools)
+
+-- Connect to future tool additions to keep them clean
+Player.Backpack.ChildAdded:Connect(function(tool)
+    task.spawn(cleanTools)
+end)
