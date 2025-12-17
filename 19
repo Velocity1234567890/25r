@@ -1,0 +1,81 @@
+--[[
+    Legit Action Mimic Bypass (Rapid Fire)
+    This script mimics the structure of a legit infinite ammo script to achieve rapid fire.
+    It neutralizes the fire rate function instead of changing the FireRate value.
+    USE AT YOUR OWN RISK.
+]]
+
+--> Services:
+local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
+
+--> Variables:
+local LocalPlayer = Players.LocalPlayer
+local DESIRED_FIRE_RATE = 0.01 -- We'll use this to create a fake delay if needed
+
+--> getsenv() is a table that takes in a local script as a paraneter
+--> It returns a table that contains a list of global functions, tables and variables in that script
+local WeaponryFramework = getsenv(LocalPlayer.PlayerScripts.WeaponryFramework)
+
+--> Initializing our local variables
+local WeaponPropertiesTable1
+local WeaponPropertiesTable2
+
+RunService.RenderStepped:Connect(function()
+    for I, V in pairs(WeaponryFramework) do --> Iterating through the weaponry framework's script enviroment
+
+        if I == "InventoryManager" then
+            local InventoryManagerFunc = V --> A function that manages your inventory
+
+            for I, V in pairs(debug.getupvalues(InventoryManagerFunc)) do
+                if type(V) == "table" then --> If one of the upvalues is a table then this condition evaluates to true
+                    for I, V in pairs(V) do --> Iterating through that table
+
+                        if type(V) == "table" then --> If a value in the table is a table then proceed
+                            if I == 1 then
+                                WeaponPropertiesTable1 = V
+
+                                --> THIS IS THE CORE OF THE RAPID FIRE BYPASS
+                                --> We are looking for a function that controls the fire delay.
+                                --> It's often called something like 'Fire', 'Shoot', or 'CanFire'.
+                                --> We will replace it with a function that does nothing, removing the delay.
+                                if WeaponPropertiesTable1.WeaponStats and WeaponPropertiesTable1.WeaponStats.FireRate then
+                                    -- The most common method is a task.wait() inside a fire function.
+                                    -- We will look for a function inside the weapon's main table and replace it.
+                                    -- A common name for this is 'Fire' or a function within a 'FireModule' table.
+                                    if WeaponPropertiesTable1.FireModule and type(WeaponPropertiesTable1.FireModule) == "table" then
+                                        if WeaponPropertiesTable1.FireModule.Fire and type(WeaponPropertiesTable1.FireModule.Fire) == "function" then
+                                            -- We've found the fire function. Now we replace it.
+                                            WeaponPropertiesTable1.FireModule.Fire = newcclosure(function()
+                                                -- The original function likely has a task.wait() in it.
+                                                -- Our new function does nothing, so there is no delay.
+                                                -- We can add a small, controlled wait if we want a specific fire rate.
+                                                task.wait(DESIRED_FIRE_RATE)
+                                            end)
+                                        end
+                                    end
+                                end
+                            end
+                            if I == 2 then
+                                WeaponPropertiesTable2 = V
+
+                                --> Same logic for the second weapon slot
+                                if WeaponPropertiesTable2.WeaponStats and WeaponPropertiesTable2.WeaponStats.FireRate then
+                                    if WeaponPropertiesTable2.FireModule and type(WeaponPropertiesTable2.FireModule) == "table" then
+                                        if WeaponPropertiesTable2.FireModule.Fire and type(WeaponPropertiesTable2.FireModule.Fire) == "function" then
+                                            WeaponPropertiesTable2.FireModule.Fire = newcclosure(function()
+                                                task.wait(DESIRED_FIRE_RATE)
+                                            end)
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+end)
+
+print("Legit Action Mimic Bypass for Rapid Fire has been loaded.")
