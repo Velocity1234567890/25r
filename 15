@@ -1,0 +1,64 @@
+--Rapidfire
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local DESIRED_FIRE_RATE = 0.01 
+
+local function getFrameworkEnv()
+    local weaponScript = LocalPlayer:WaitForChild("PlayerScripts"):WaitForChild("WeaponryFramework", 10)
+    if not weaponScript then
+        return nil
+    end
+    return getsenv(weaponScript)
+end
+
+local function GetActiveWeaponObjects(frameworkEnv)
+    local WeaponObjects = {}
+    for _, v in pairs(frameworkEnv) do
+        if typeof(v) == "table" and rawget(v, "WeaponStats") then
+            table.insert(WeaponObjects, v)
+        elseif typeof(v) == "function" then
+            local Success, Upvalues = pcall(debug.getupvalues, v)
+            if Success and Upvalues then
+                for _, Upvalue in pairs(Upvalues) do
+                    if typeof(Upvalue) == "table" and rawget(Upvalue, "WeaponStats") then
+                        table.insert(WeaponObjects, Upvalue)
+                    end
+                end
+            end
+        end
+    end
+    return WeaponObjects
+end
+
+local originalRequire = require
+local hookedRequire = function(moduleScript)
+    local moduleData = originalRequire(moduleScript)
+
+    if type(moduleData) == "table" and moduleData.FireRate and moduleData.WeaponName then
+        if moduleData.FireRate ~= DESIRED_FIRE_RATE then
+            moduleData.FireRate = DESIRED_FIRE_RATE
+        end
+    end
+
+    return moduleData
+end
+_G.require = hookedRequire
+
+local frameworkEnv = getFrameworkEnv()
+if not frameworkEnv then return end
+
+task.spawn(function()
+    while true do
+        task.wait(0.2)
+        local ActiveWeapons = GetActiveWeaponObjects(frameworkEnv)
+        for _, Weapon in pairs(ActiveWeapons) do
+            if Weapon.WeaponStats and Weapon.WeaponStats.FireRate then
+                pcall(function()
+                    if Weapon.WeaponStats.FireRate ~= DESIRED_FIRE_RATE then
+                        Weapon.WeaponStats.FireRate = DESIRED_FIRE_RATE
+                    end
+                end)
+            end
+        end
+    end
+end)
