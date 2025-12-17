@@ -1,0 +1,74 @@
+--[[
+    Brute-Force RenderStepped Loop Bypass
+    This script uses a high-frequency loop to constantly re-apply the FireRate change,
+    overwhelming any anti-cheat that tries to revert it.
+    USE AT YOUR OWN RISK.
+]]
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+
+local LocalPlayer = Players.LocalPlayer
+local DESIRED_FIRE_RATE = 0.01
+
+local function getFrameworkEnv()
+    local weaponScript = LocalPlayer:WaitForChild("PlayerScripts"):WaitForChild("WeaponryFramework", 10)
+    if not weaponScript then
+        return nil
+    end
+    return getsenv(weaponScript)
+end
+
+local function GetActiveWeaponObjects(frameworkEnv)
+    local WeaponObjects = {}
+    for _, v in pairs(frameworkEnv) do
+        if typeof(v) == "table" and rawget(v, "WeaponStats") then
+            table.insert(WeaponObjects, v)
+        elseif typeof(v) == "function" then
+            local Success, Upvalues = pcall(debug.getupvalues, v)
+            if Success and Upvalues then
+                for _, Upvalue in pairs(Upvalues) do
+                    if typeof(Upvalue) == "table" and rawget(Upvalue, "WeaponStats") then
+                        table.insert(WeaponObjects, Upvalue)
+                    end
+                end
+            end
+        end
+    end
+    return WeaponObjects
+end
+
+-- This is the core of the bypass. It will run on every frame.
+local function onHeartbeat()
+    local frameworkEnv = getFrameworkEnv()
+    if not frameworkEnv then return end
+
+    local ActiveWeapons = GetActiveWeaponObjects(frameworkEnv)
+    for _, Weapon in pairs(ActiveWeapons) do
+        if Weapon.WeaponStats and Weapon.WeaponStats.FireRate then
+            pcall(function()
+                -- Force the table to be editable in case it's locked by the anti-cheat
+                local mt = getrawmetatable(Weapon.WeaponStats)
+                if mt then
+                    setreadonly(mt, false)
+                end
+
+                -- Forcefully overwrite the FireRate value
+                Weapon.WeaponStats.FireRate = DESIRED_FIRE_RATE
+
+                -- (Optional) Re-lock the metatable. This might be more stealthy.
+                -- If it doesn't work, comment out the line below.
+                if mt then
+                    setreadonly(mt, true)
+                end
+            end)
+        end
+    end
+end
+
+-- Connect our function to the Heartbeat event.
+-- This is the fastest and most integrated loop, running ~60 times per second.
+-- This ensures our change is constantly being applied, fighting the anti-cheat.
+RunService.Heartbeat:Connect(onHeartbeat)
+
+print("Brute-Force Loop Bypass has been loaded and is running.")
