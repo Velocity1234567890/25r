@@ -1,0 +1,37 @@
+--[[
+    Source Code Interception Bypass
+    This script replaces the global 'require' function to intercept and modify
+    gun stats as they are loaded, bypassing anti-cheats that monitor for changes.
+    USE AT YOUR OWN RISK.
+]]
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local DESIRED_FIRE_RATE = 0.08
+
+--> This is the core of the bypass.
+--> We are saving the original 'require' function and creating our own.
+local originalRequire = require
+local hookedRequire = newcclosure(function(moduleScript)
+    local moduleData = originalRequire(moduleScript)
+
+    -- We check if the module that was just loaded is a weapon stats module.
+    -- We look for the specific keys that define a weapon in this game.
+    if type(moduleData) == "table" and moduleData.WeaponName and moduleData.FireRate then
+        -- If it is, we IMMEDIATELY change the FireRate value.
+        -- This happens before the anti-cheat or any other script gets a chance to use it.
+        moduleData.FireRate = DESIRED_FIRE_RATE
+        print("Intercepted and modified:", moduleData.WeaponName)
+    end
+
+    -- We then return the (now modified) module data to the game, which is none the wiser.
+    return moduleData
+end)
+
+--> This is the most important line.
+--> We replace the GLOBAL 'require' function with our hooked version.
+--> From now on, any script that calls 'require()' will be using our function instead.
+_G.require = hookedRequire
+
+print("Source Code Interception Bypass has been loaded.")
+print("The 'require' function has been globally replaced.")
