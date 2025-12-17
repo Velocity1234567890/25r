@@ -1,0 +1,58 @@
+--[[
+    Gun Modifier (Force-Overwrite Method)
+    This script repeatedly applies changes to bypass simple anti-cheats.
+    USE AT YOUR OWN RISK.
+]]
+
+local player = game:GetService("Players").LocalPlayer
+local replicatedStorage = game:GetService("ReplicatedStorage")
+local runService = game:GetService("RunService")
+
+-- The desired Time Between Shots (TBS) for a very high fire rate.
+local DESIRED_TBS = 0.041
+
+-- Function to find and modify gun stat tables in memory
+local function modifyGunStatsInMemory()
+    -- We use getgc() to scan through all objects created by the game
+    for _, obj in pairs(getgc(true)) do
+        -- We are looking for tables that look like they hold gun stats
+        if type(obj) == "table" and rawget(obj, "TBS") then
+            -- We found one, so we force our desired value
+            obj.TBS = DESIRED_TBS
+        end
+    end
+end
+
+-- Function to modify the base gun modules
+local function modifyGunModules()
+    local gunSettings = replicatedStorage:FindFirstChild("GunSettings")
+    if not gunSettings then return end
+
+    for _, module in pairs(gunSettings:GetChildren()) do
+        if module:IsA("ModuleScript") then
+            local success, gunModule = pcall(require, module)
+            if success and type(gunModule) == "table" and gunModule.TBS then
+                -- Directly change the value in the module's table
+                gunModule.TBS = DESIRED_TBS
+            end
+        end
+    end
+end
+
+-- This is the core of the bypass.
+-- We connect to the Heartbeat event, which fires many times per second.
+-- This ensures our changes are constantly re-applied.
+runService.Heartbeat:Connect(function()
+    modifyGunStatsInMemory()
+end)
+
+-- Also, run it once at the start and when a new tool is added to be safe
+modifyGunModules()
+modifyGunStatsInMemory()
+
+player.Backpack.ChildAdded:Connect(function()
+    task.wait(0.1) -- Small delay to let the tool fully load
+    modifyGunStatsInMemory()
+end)
+
+print("Gun Modifier script has been executed. TBS set to:", DESIRED_TBS)
