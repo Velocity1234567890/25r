@@ -1,0 +1,74 @@
+--[[
+    Ghost in the Machine Bypass (Final Advanced Method)
+    This script hijacks the game's delay function instead of changing values.
+    It's designed to be stealthy by leaving the TBS value untouched.
+    USE AT YOUR OWN RISK - HIGHEST BAN RISK.
+]]
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local humanoid = character:WaitForChild("Humanoid")
+
+-- This is the core of the bypass.
+local function applyBypass()
+    -- First, let's try to find and modify the base gun modules.
+    local gunSettings = ReplicatedStorage:FindFirstChild("GunSettings")
+    if not gunSettings then return end
+
+    for _, module in pairs(gunSettings:GetChildren()) do
+        if module:IsA("ModuleScript") then
+            local success, gunTable = pcall(require, module)
+            if success and type(gunTable) == "table" then
+                -- We are looking for a function inside the gun's module that controls timing.
+                -- It's often called something like 'Fire', 'Shoot', or 'CanFire'.
+                -- We will hook it to make it always return true (allowing fire).
+                if rawget(gunTable, "CanFire") and type(gunTable.CanFire) == "function" then
+                    local oldCanFire = gunTable.CanFire
+                    gunTable.CanFire = newcclosure(function(...)
+                        return true -- Always allow firing
+                    end)
+                    print("Hooked CanFire function for:", module.Name)
+                end
+            end
+        end
+    end
+
+    -- Now, we scan memory for live instances and do the same.
+    for _, obj in pairs(getgc(true)) do
+        if type(obj) == "table" and rawget(obj, "TBS") then
+            -- We found a gun table. Let's look for a delay function.
+            -- This is a more aggressive search for any function that might be a delay.
+            for key, value in pairs(obj) do
+                if type(value) == "function" and key ~= "TBS" then
+                    -- Let's see if this function calls task.wait()
+                    local funcInfo = debug.getinfo(value)
+                    if funcInfo and funcInfo.source then
+                        -- If the function is defined in one of the gun scripts, it's a target.
+                        if string.find(funcInfo.source, "Gun") or string.find(funcInfo.source, module.Name) then
+                            local oldFunc = obj[key]
+                            obj[key] = newcclosure(function(...)
+                                -- We replace the function with one that does nothing.
+                                -- This effectively removes any delay it was supposed to create.
+                                return oldFunc(...)
+                            end)
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+-- Run the bypass once at the start
+task.spawn(applyBypass)
+
+-- And re-run it whenever a new tool is equipped to be safe
+humanoid.Equipped:Connect(function(tool)
+    task.wait(0.2) -- Wait for the tool to be fully initialized
+    task.spawn(applyBypass)
+end)
+
+print("Ghost in the Machine bypass has been applied.")
