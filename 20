@@ -1,0 +1,78 @@
+--[[
+    Metatable Hook Bypass (Rapid Fire)
+    This script uses the structure of your working script but applies a metatable hook
+    to the FireRate value, which is a much stealthier method of modification.
+    USE AT YOUR OWN RISK.
+]]
+
+--> Services:
+local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
+
+--> Variables:
+local LocalPlayer = Players.LocalPlayer
+local DESIRED_FIRE_RATE = 0.01
+
+--> getsenv() is a table that takes in a local script as a paraneter
+--> It returns a table that contains a list of global functions, tables and variables in that script
+local WeaponryFramework = getsenv(LocalPlayer.PlayerScripts.WeaponryFramework)
+
+--> Initializing our local variables
+local WeaponPropertiesTable1
+local WeaponPropertiesTable2
+
+-- We'll keep track of which tables we've already hooked to avoid errors
+local hookedTables = {}
+
+RunService.RenderStepped:Connect(function()
+    for I, V in pairs(WeaponryFramework) do --> Iterating through the weaponry framework's script enviroment
+
+        if I == "InventoryManager" then
+            local InventoryManagerFunc = V --> A function that manages your inventory
+
+            for I, V in pairs(debug.getupvalues(InventoryManagerFunc)) do
+                if type(V) == "table" then --> If one of the upvalues is a table then this condition evaluates to true
+                    for I, V in pairs(V) do --> Iterating through that table
+
+                        if type(V) == "table" and V.WeaponStats then --> If a value in the table is a table with WeaponStats
+                            if I == 1 then
+                                WeaponPropertiesTable1 = V
+                            elseif I == 2 then
+                                WeaponPropertiesTable2 = V
+                            end
+                            
+                            local currentWeapon = V
+                            if currentWeapon and not hookedTables[currentWeapon.WeaponStats] then
+                                hookedTables[currentWeapon.WeaponStats] = true -- Mark as hooked
+
+                                --> THIS IS THE CORE OF THE BYPASS
+                                --> We are hooking the metatable of the WeaponStats table.
+                                --> This will intercept any attempt to read the FireRate.
+                                local statsMt = getrawmetatable(currentWeapon.WeaponStats)
+                                if statsMt then
+                                    setreadonly(statsMt, false)
+                                    local oldIndex = statsMt.__index
+                                    statsMt.__index = newcclosure(function(t, k)
+                                        if k == "FireRate" then
+                                            return DESIRED_FIRE_RATE -- Return our desired fire rate
+                                        end
+                                        -- For any other key, return the original value
+                                        if oldIndex then
+                                            return oldIndex(t, k)
+                                        else
+                                            return rawget(t, k)
+                                        end
+                                    end)
+                                    setreadonly(statsMt, true)
+                                    print("Successfully hooked FireRate for a weapon.")
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+end)
+
+print("Metatable Hook Bypass for Rapid Fire has been loaded.")
