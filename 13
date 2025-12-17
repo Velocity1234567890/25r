@@ -1,0 +1,75 @@
+--[[
+    Stealth Framework Hijacker (Rapid Fire Only)
+    This script uses metatable hooking for a stealthy rapid fire effect.
+    It avoids changing global functions and uses the game's own update loop.
+    USE AT YOUR OWN RISK.
+]]
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+
+local LocalPlayer = Players.LocalPlayer
+local DESIRED_FIRE_RATE = 0.01
+
+-- This function gets the environment of the main weapon script
+local function getFrameworkEnv()
+    local weaponScript = LocalPlayer:WaitForChild("PlayerScripts"):WaitForChild("WeaponryFramework", 10)
+    if not weaponScript then
+        warn("WeaponryFramework script not found!")
+        return nil
+    end
+    return getsenv(weaponScript)
+end
+
+local frameworkEnv = getFrameworkEnv()
+if not frameworkEnv then return end
+
+-- This function will find the weapon's stat table and apply our stealthy hook
+local function applyFireRateHook()
+    -- Search for the weapon's main table inside the framework's environment and its upvalues
+    local weaponObjects = {}
+    for _, v in pairs(frameworkEnv) do
+        if typeof(v) == "table" and rawget(v, "WeaponStats") then
+            table.insert(weaponObjects, v)
+        end
+    end
+
+    for _, func in pairs(frameworkEnv) do
+        if typeof(func) == "function" then
+            local Success, Upvalues = pcall(debug.getupvalues, func)
+            if Success and Upvalues then
+                for _, Upvalue in pairs(Upvalues) do
+                    if typeof(Upvalue) == "table" and rawget(Upvalue, "WeaponStats") then
+                        table.insert(weaponObjects, Upvalue)
+                    end
+                end
+            end
+        end
+    end
+
+    -- Now, apply the hook to each weapon object we found
+    for _, weapon in pairs(weaponObjects) do
+        if weapon.WeaponStats and weapon.WeaponStats.FireRate then
+            local mt = getrawmetatable(weapon.WeaponStats)
+            if mt and not mt.HookedFireRate then -- Check if we already hooked this
+                setreadonly(mt, false)
+                mt.__index = newcclosure(function(t, k)
+                    if k == "FireRate" then
+                        return DESIRED_FIRE_RATE -- Return our desired fire rate
+                    end
+                    return rawget(t, k) -- Return the real value for anything else
+                end)
+                mt.HookedFireRate = true -- Mark as hooked to prevent re-hooking
+                setreadonly(mt, true)
+                print("Successfully hooked FireRate for a weapon.")
+            end
+        end
+    end
+end
+
+-- We connect to RenderStepped to run our code once and ensure it's in a safe environment
+RunService.RenderStepped:Connect(newcclosure(function()
+    applyFireRateHook()
+end))
+
+print("Stealth Rapid Fire script has been loaded.")
