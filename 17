@@ -1,0 +1,89 @@
+--[[
+    Forced Edit & Metamethod Lock Bypass
+    This script forces tables to be editable, changes the value, and locks it with a metatable hook.
+    This is a comprehensive solution to bypass simple anti-cheats.
+    USE AT YOUR OWN RISK.
+]]
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local DESIRED_FIRE_RATE = 0.01
+
+local function getFrameworkEnv()
+    local weaponScript = LocalPlayer:WaitForChild("PlayerScripts"):WaitForChild("WeaponryFramework", 10)
+    if not weaponScript then
+        return nil
+    end
+    return getsenv(weaponScript)
+end
+
+local function GetActiveWeaponObjects(frameworkEnv)
+    local WeaponObjects = {}
+    for _, v in pairs(frameworkEnv) do
+        if typeof(v) == "table" and rawget(v, "WeaponStats") then
+            table.insert(WeaponObjects, v)
+        elseif typeof(v) == "function" then
+            local Success, Upvalues = pcall(debug.getupvalues, v)
+            if Success and Upvalues then
+                for _, Upvalue in pairs(Upvalues) do
+                    if typeof(Upvalue) == "table" and rawget(Upvalue, "WeaponStats") then
+                        table.insert(WeaponObjects, Upvalue)
+                    end
+                end
+            end
+        end
+    end
+    return WeaponObjects
+end
+
+local function applyBypass()
+    local frameworkEnv = getFrameworkEnv()
+    if not frameworkEnv then return end
+
+    local ActiveWeapons = GetActiveWeaponObjects(frameworkEnv)
+    local hookedTables = {} -- Keep track of tables we've already hooked
+
+    for _, Weapon in pairs(ActiveWeapons) do
+        if Weapon.WeaponStats and Weapon.WeaponStats.FireRate and not hookedTables[Weapon.WeaponStats] then
+            local statsTable = Weapon.WeaponStats
+            hookedTables[statsTable] = true -- Mark as hooked
+
+            pcall(function()
+                -- Step 1: Force the table to be editable
+                local mt = getrawmetatable(statsTable) or {}
+                setreadonly(mt, false)
+
+                -- Step 2: Change the value directly
+                statsTable.FireRate = DESIRED_FIRE_RATE
+
+                -- Step 3: Lock it with a metamethod hook
+                -- This prevents the anti-cheat from changing it back
+                mt.__index = newcclosure(function(t, k)
+                    if k == "FireRate" then
+                        return DESIRED_FIRE_RATE -- Always return our desired value
+                    end
+                    return rawget(t, k) -- Return the real value for other keys
+                end)
+                mt.__newindex = newcclosure(function(t, k, v)
+                    -- Prevent the game from setting a new FireRate value
+                    if k ~= "FireRate" then
+                        rawset(t, k, v)
+                    end
+                end)
+                
+                -- Re-apply the metatable and make it read-only again
+                setreadonly(statsTable, true)
+                setreadonly(mt, true)
+
+                print("Successfully bypassed FireRate for a weapon.")
+            end)
+        end
+    end
+end
+
+-- Run the bypass once. The metatable hook will persist.
+task.spawn(function()
+    pcall(applyBypass)
+end)
+
+print("Forced Edit & Metamethod Lock Bypass has been applied.")
