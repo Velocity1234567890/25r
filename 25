@@ -1,0 +1,93 @@
+-- Silent Aim, simplified from the original script by Sw1ndler#7733 and Kaoru~#6438
+
+-- SERVICES
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+
+-- PLAYER VARIABLES
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+local Mouse = LocalPlayer:GetMouse()
+
+-- CONFIGURATION
+local TeamCheck = #game:GetService("Teams"):GetTeams() ~= 0 -- Automatically sets team check if teams exist
+local SilentAimFOV = 250 -- Field of View for the silent aim
+
+-- UTILITY FUNCTIONS
+local function GetClosestPlayer()
+    local ClosestPlayer = nil
+    local ClosestDistance = math.huge
+
+    for _, Player in ipairs(Players:GetPlayers()) do
+        if Player ~= LocalPlayer and Player.Character and Player.Character:FindFirstChild("Humanoid") and Player.Character:FindFirstChild("HumanoidRootPart") then
+            -- Check if player is alive and on a different team (if TeamCheck is enabled)
+            if Player.Character.Humanoid.Health > 0 and (not TeamCheck or Player.Team ~= LocalPlayer.Team) then
+                local Vector, OnScreen = Camera:WorldToViewportPoint(Player.Character.HumanoidRootPart.Position)
+                local Distance = (Vector2.new(Vector.X, Vector.Y) - Vector2.new(Mouse.X, Mouse.Y)).Magnitude
+
+                if OnScreen and Distance < ClosestDistance and Distance < SilentAimFOV then
+                    ClosestPlayer = Player
+                    ClosestDistance = Distance
+                end
+            end
+        end
+    end
+
+    return ClosestPlayer
+end
+
+local function IsVisible(Player)
+    local Origin = Camera.CFrame.Position
+    local Destination = Player.Character.Head.Position
+    local RaycastResult = workspace:Raycast(Origin, Destination - Origin)
+    
+    if RaycastResult and RaycastResult.Instance then
+        local Part = RaycastResult.Instance
+        if Part:IsDescendantOf(Player.Character) then
+            return true
+        end
+    end
+    
+    return false
+end
+
+-- CORE SILENT AIM LOGIC
+local function findRaycastFunction()
+    -- This function attempts to find the game's main raycasting function in the garbage collector.
+    -- It's a common technique used in scripts to hook into game mechanics.
+    for _, v in ipairs(getgc()) do
+        if type(v) == "function" and getfenv(v).script == game:GetService("Players").LocalPlayer.PlayerScripts:WaitForChild("Client", 5) then
+            -- This is a common signature for weapon firing functions.
+            -- It may need adjustment if the game updates or is different.
+            local Constants = debug.getconstants(v)
+            for i = 1, #Constants do
+                if typeof(Constants[i]) == "Instance" and Constants[i]:IsA("RemoteFunction") and Constants[i].Name == "FireWeapon" then
+                    return v
+                end
+            end
+        end
+    end
+    return nil
+end
+
+local RaycastFunction = findRaycastFunction()
+
+if RaycastFunction then
+    -- HOOK THE RAYCAST FUNCTION
+    local OldRaycast
+    OldRaycast = hookfunction(RaycastFunction, function(Origin, Direction, ...)
+        local Target = GetClosestPlayer()
+        
+        if Target and Target.Character and Target.Character:FindFirstChild("Head") and IsVisible(Target) then
+            -- If a valid target is found, override the raycast to hit their head
+            local NewOrigin = LocalPlayer.Character.Head.Position
+            local NewDirection = (Target.Character.Head.Position - NewOrigin).Unit * 1000
+            return OldRaycast(NewOrigin, NewDirection, ...)
+        end
+        
+        -- Otherwise, perform the original raycast
+        return OldRaycast(Origin, Direction, ...)
+    end)
+else
+    warn("Raycast function not found. Silent aim may not work.")
+end
