@@ -1,0 +1,719 @@
+--BunnyHop
+getgenv().bhopinfo = {
+    RolvePatch = true, 
+    JPatch = false,    
+    evpatch = true,    
+    groundamt = 0,
+    strafespeed = 2.6,
+    forwardboost = 2.6
+}
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UIS = game:GetService("UserInputService")
+
+local Player = Players.LocalPlayer
+local hum = nil
+local jumpState = Enum.HumanoidStateType.Jumping
+local spaceHeld = false
+local lastJumpTime = 0
+
+UIS.InputBegan:Connect(function(input, processed)
+    if processed then return end
+    if input.UserInputType == Enum.UserInputType.Keyboard then
+        if input.KeyCode == Enum.KeyCode.Space then
+            spaceHeld = true
+        end
+    end
+end)
+
+UIS.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.Keyboard then
+        if input.KeyCode == Enum.KeyCode.Space then
+            spaceHeld = false
+        end
+    end
+end)
+
+local function isNearGround(char)
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then return false end
+    
+    if hum and hum.FloorMaterial ~= Enum.Material.Air then
+        return true
+    end
+    
+    local ray = Ray.new(root.Position, Vector3.new(0, -getgenv().bhopinfo.groundamt, 0))
+    local part, pos = workspace:FindPartOnRay(ray, char)
+    return part ~= nil
+end
+
+local function setupHumanoid(char)
+    hum = char:FindFirstChildOfClass("Humanoid") or char:WaitForChild("Humanoid")
+    if not hum then return end
+
+    if getgenv().bhopinfo.evpatch then
+        local jp, jh = hum.JumpPower, hum.JumpHeight
+        hum:GetPropertyChangedSignal("JumpPower"):Connect(function()
+            if hum.JumpPower <= 0 then hum.JumpPower = jp end
+        end)
+        hum:GetPropertyChangedSignal("JumpHeight"):Connect(function()
+            if hum.JumpHeight <= 0 then hum.JumpHeight = jh end
+        end)
+    end
+end
+
+if Player.Character then
+    setupHumanoid(Player.Character)
+end
+Player.CharacterAdded:Connect(setupHumanoid)
+
+RunService.Heartbeat:Connect(function(dt)
+    if not hum or not hum.Parent then return end
+
+    local char = Player.Character
+    if not char then return end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+
+    if spaceHeld and getgenv().bhopinfo.RolvePatch then
+        local isFalling = root.Velocity.Y <= 0
+        local canJump = isNearGround(char)
+        
+        if isFalling and canJump then
+            if tick() - lastJumpTime > 0.1 then
+                hum:ChangeState(jumpState)
+                lastJumpTime = tick()
+            end
+        end
+    end
+
+    if hum:GetState() ~= Enum.HumanoidStateType.Landed then
+        local cam = workspace.CurrentCamera
+        local moveDir = Vector3.zero
+
+        if UIS:IsKeyDown(Enum.KeyCode.A) then
+            moveDir = moveDir - cam.CFrame.RightVector
+        end
+        if UIS:IsKeyDown(Enum.KeyCode.D) then
+            moveDir = moveDir + cam.CFrame.RightVector
+        end
+        if UIS:IsKeyDown(Enum.KeyCode.W) then
+            moveDir = moveDir + cam.CFrame.LookVector * getgenv().bhopinfo.forwardboost
+        end
+        if UIS:IsKeyDown(Enum.KeyCode.S) then
+            moveDir = moveDir - cam.CFrame.LookVector
+        end
+
+        if moveDir.Magnitude > 0 then
+            moveDir = moveDir.Unit * getgenv().bhopinfo.strafespeed
+            local currentVel = root.Velocity
+            root.Velocity = Vector3.new(
+                currentVel.X + moveDir.X * dt * 60,
+                currentVel.Y,
+                currentVel.Z + moveDir.Z * dt * 60
+            )
+        end
+    end
+end)
+
+--Rapidfire
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local DESIRED_FIRE_RATE = 0.08 
+
+local function getFrameworkEnv()
+    local weaponScript = LocalPlayer:WaitForChild("PlayerScripts"):WaitForChild("WeaponryFramework", 10)
+    if not weaponScript then
+        return nil
+    end
+    return getsenv(weaponScript)
+end
+
+local function GetActiveWeaponObjects(frameworkEnv)
+    local WeaponObjects = {}
+    for _, v in pairs(frameworkEnv) do
+        if typeof(v) == "table" and rawget(v, "WeaponStats") then
+            table.insert(WeaponObjects, v)
+        elseif typeof(v) == "function" then
+            local Success, Upvalues = pcall(debug.getupvalues, v)
+            if Success and Upvalues then
+                for _, Upvalue in pairs(Upvalues) do
+                    if typeof(Upvalue) == "table" and rawget(Upvalue, "WeaponStats") then
+                        table.insert(WeaponObjects, Upvalue)
+                    end
+                end
+            end
+        end
+    end
+    return WeaponObjects
+end
+
+local originalRequire = require
+local hookedRequire = function(moduleScript)
+    local moduleData = originalRequire(moduleScript)
+
+    if type(moduleData) == "table" and moduleData.FireRate and moduleData.WeaponName then
+        if moduleData.FireRate ~= DESIRED_FIRE_RATE then
+            moduleData.FireRate = DESIRED_FIRE_RATE
+        end
+    end
+
+    return moduleData
+end
+_G.require = hookedRequire
+
+local frameworkEnv = getFrameworkEnv()
+if not frameworkEnv then return end
+
+task.spawn(function()
+    while true do
+        task.wait(0.2)
+        local ActiveWeapons = GetActiveWeaponObjects(frameworkEnv)
+        for _, Weapon in pairs(ActiveWeapons) do
+            if Weapon.WeaponStats and Weapon.WeaponStats.FireRate then
+                pcall(function()
+                    if Weapon.WeaponStats.FireRate ~= DESIRED_FIRE_RATE then
+                        Weapon.WeaponStats.FireRate = DESIRED_FIRE_RATE
+                    end
+                end)
+            end
+        end
+    end
+end)
+
+--Silent Aim
+local SilentAimSettings = {
+    Enabled = true,
+    TeamCheck = false,
+    VisibleCheck = false,
+    TargetPart = "Head",
+    SilentAimMethod = "Raycast",
+    FOVRadius = 900,
+    HitChance = 100
+}
+
+local Camera = workspace.CurrentCamera
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local GuiService = game:GetService("GuiService")
+local UserInputService = game:GetService("UserInputService")
+
+local LocalPlayer = Players.LocalPlayer
+local Mouse = LocalPlayer:GetMouse()
+
+local GetChildren = game.GetChildren
+local GetPlayers = Players.GetPlayers
+local WorldToScreen = Camera.WorldToScreenPoint
+local WorldToViewportPoint = Camera.WorldToViewportPoint
+local GetPartsObscuringTarget = Camera.GetPartsObscuringTarget
+local FindFirstChild = game.FindFirstChild
+local RenderStepped = RunService.RenderStepped
+local GuiInset = GuiService.GetGuiInset
+local GetMouseLocation = UserInputService.GetMouseLocation
+
+local resume = coroutine.resume
+local create = coroutine.create
+
+local ValidTargetParts = {"Head", "HumanoidRootPart"}
+
+function CalculateChance(Percentage)
+    Percentage = math.floor(Percentage)
+    local chance = math.floor(Random.new().NextNumber(Random.new(), 0, 1) * 100) / 100
+    return chance <= Percentage / 100
+end
+
+local function getPositionOnScreen(Vector)
+    local Vec3, OnScreen = WorldToScreen(Camera, Vector)
+    return Vector2.new(Vec3.X, Vec3.Y), OnScreen
+end
+
+local function getDirection(Origin, Position)
+    return (Position - Origin).Unit * 1000
+end
+
+local function getMousePosition()
+    return GetMouseLocation(UserInputService)
+end
+
+local function IsPlayerVisible(Player)
+    local PlayerCharacter = Player.Character
+    local LocalPlayerCharacter = LocalPlayer.Character
+
+    if not (PlayerCharacter or LocalPlayerCharacter) then return end
+
+    local PlayerRoot = FindFirstChild(PlayerCharacter, SilentAimSettings.TargetPart) or FindFirstChild(PlayerCharacter, "HumanoidRootPart")
+
+    if not PlayerRoot then return end
+
+    local CastPoints, IgnoreList = {PlayerRoot.Position, LocalPlayerCharacter, PlayerCharacter}, {LocalPlayerCharacter, PlayerCharacter}
+    local ObscuringObjects = #GetPartsObscuringTarget(Camera, CastPoints, IgnoreList)
+
+    return ((ObscuringObjects == 0 and true) or (ObscuringObjects > 0 and false))
+end
+
+local function getTeamCount()
+    local teams = {}
+    for _, player in pairs(GetPlayers(Players)) do
+        if player.Team then
+            teams[player.Team.Name] = true
+        end
+    end
+    local count = 0
+    for _ in pairs(teams) do
+        count = count + 1
+    end
+    return count
+end
+
+local function getClosestPlayer()
+    if not SilentAimSettings.TargetPart then return end
+    local Closest
+    local DistanceToMouse
+    
+    -- Determine team check based on number of teams
+    local teamCount = getTeamCount()
+    local shouldCheckTeam = teamCount >= 2
+    
+    for _, Player in next, GetPlayers(Players) do
+        if Player == LocalPlayer then continue end
+        
+        -- Dynamic team check: only check teams if there are 2 or more teams
+        if shouldCheckTeam and Player.Team == LocalPlayer.Team then continue end
+
+        local Character = Player.Character
+        if not Character then continue end
+
+        if SilentAimSettings.VisibleCheck and not IsPlayerVisible(Player) then continue end
+
+        local HumanoidRootPart = FindFirstChild(Character, "HumanoidRootPart")
+        local Humanoid = FindFirstChild(Character, "Humanoid")
+        if not HumanoidRootPart or not Humanoid or Humanoid and Humanoid.Health <= 0 then continue end
+
+        local ScreenPosition, OnScreen = getPositionOnScreen(HumanoidRootPart.Position)
+        if not OnScreen then continue end
+
+        local Distance = (getMousePosition() - ScreenPosition).Magnitude
+        if Distance <= (DistanceToMouse or SilentAimSettings.FOVRadius or 2000) then
+            -- Updated to handle random body part selection
+            if SilentAimSettings.TargetPart == "Random" then
+                local randomPart
+                repeat
+                    randomPart = ValidTargetParts[math.random(1, #ValidTargetParts)]
+                until FindFirstChild(Character, randomPart)
+                Closest = Character[randomPart]
+            else
+                Closest = Character[SilentAimSettings.TargetPart]
+            end
+            DistanceToMouse = Distance
+        end
+    end
+    return Closest
+end
+
+local ExpectedArguments = {
+    Raycast = {
+        ArgCountRequired = 3,
+        Args = {
+            "Instance", "Vector3", "Vector3", "RaycastParams"
+        }
+    }
+}
+
+local function ValidateArguments(Args, RayMethod)
+    local Matches = 0
+    if #Args < RayMethod.ArgCountRequired then
+        return false
+    end
+    for Pos, Argument in next, Args do
+        if typeof(Argument) == RayMethod.Args[Pos] then
+            Matches = Matches + 1
+        end
+    end
+    return Matches >= RayMethod.ArgCountRequired
+end
+
+local oldNamecall
+oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(...)
+    local Method = getnamecallmethod()
+    local Arguments = {...}
+    local self = Arguments[1]
+    local chance = CalculateChance(SilentAimSettings.HitChance)
+    if SilentAimSettings.Enabled and self == workspace and not checkcaller() and chance == true then
+        if Method == "Raycast" and SilentAimSettings.SilentAimMethod == Method then
+            if ValidateArguments(Arguments, ExpectedArguments.Raycast) then
+                local A_Origin = Arguments[2]
+
+                local HitPart = getClosestPlayer()
+                if HitPart then
+                    Arguments[3] = getDirection(A_Origin, HitPart.Position)
+
+                    return oldNamecall(unpack(Arguments))
+                end
+            end
+        end
+    end
+    return oldNamecall(...)
+end))
+
+--Spinbot
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+local HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
+
+local spinSpeed = 0.05
+
+RunService.RenderStepped:Connect(function(deltaTime)
+    if HumanoidRootPart and HumanoidRootPart.Parent:FindFirstChild("Humanoid").Health > 0 then
+        local currentCFrame = HumanoidRootPart.CFrame
+        local spinRotation = CFrame.Angles(0, math.rad(360/spinSpeed) * deltaTime, 0)
+        HumanoidRootPart.CFrame = currentCFrame * spinRotation
+    end
+end)
+
+--Weapon Chams
+local Players = game:GetService("Players")
+local localPlayer = Players.LocalPlayer
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+
+local processedModels = {}
+
+local function applyEffectsToModel(model)
+    if processedModels[model] then return end
+
+    for _, descendant in pairs(model:GetDescendants()) do
+        if descendant:IsA("SpecialMesh") or descendant:IsA("BlockMesh") or descendant:IsA("CylinderMesh") then
+            descendant:Destroy()
+        elseif descendant:IsA("SurfaceAppearance") or descendant:IsA("Decal") or descendant:IsA("Texture") then
+            descendant:Destroy()
+        elseif descendant:IsA("BasePart") then
+            local wasInvisible = descendant.Transparency >= 1
+            descendant.Material = Enum.Material.ForceField
+            descendant.BrickColor = BrickColor.new("Bright blue")
+            if wasInvisible then
+                descendant.Transparency = 1
+            else
+                descendant.Transparency = 0.2
+            end
+        end
+    end
+
+    processedModels[model] = true
+end
+
+local function processReplicatedStorageGuns()
+    local weaponsFolder = ReplicatedStorage:FindFirstChild("Weapons")
+    if not weaponsFolder then return end
+
+    for _, weaponObject in pairs(weaponsFolder:GetChildren()) do
+        local weaponModel = weaponObject:FindFirstChild("WeaponModel")
+        if weaponModel then
+            for _, gunPart in pairs(weaponModel:GetChildren()) do
+                if gunPart:IsA("Model") then
+                    applyEffectsToModel(gunPart)
+                end
+            end
+        end
+
+        local weaponTool = weaponObject:FindFirstChild("WeaponTool")
+        if weaponTool then
+            for _, gunPart in pairs(weaponTool:GetChildren()) do
+                if gunPart:IsA("Model") then
+                    applyEffectsToModel(gunPart)
+                end
+            end
+        end
+    end
+
+    local rpg7 = weaponsFolder:FindFirstChild("rpg7")
+    if rpg7 then
+        local rocket = rpg7:FindFirstChild("Rocket_rpg7")
+        if rocket and rocket:IsA("Model") then
+            applyEffectsToModel(rocket)
+        end
+    end
+end
+
+local function startScanningForPlayerGuns()
+    while true do
+        local containers = {}
+        if localPlayer.Character then
+            table.insert(containers, localPlayer.Character)
+        end
+        table.insert(containers, localPlayer.Backpack)
+
+        for _, container in pairs(containers) do
+            for _, descendant in pairs(container:GetDescendants()) do
+                if descendant:IsA("Model") then
+                    applyEffectsToModel(descendant)
+                end
+            end
+        end
+
+        task.wait(0.1)
+    end
+end
+
+Workspace.ChildAdded:Connect(function(child)
+    if child:IsA("Model") and child.Name:lower():find("rocket") then
+        task.wait(0.1)
+        applyEffectsToModel(child)
+    end
+end)
+
+processReplicatedStorageGuns()
+startScanningForPlayerGuns()
+
+--Instant Equip
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local PlayerScripts = LocalPlayer:WaitForChild("PlayerScripts")
+local WeaponFramework = PlayerScripts:WaitForChild("WeaponryFramework")
+
+local function GetActiveWeaponObjects()
+    local WeaponObjects = {}
+    for _, v in pairs(getsenv(WeaponFramework)) do
+        if typeof(v) == "table" and rawget(v, "WeaponStats") then
+            table.insert(WeaponObjects, v)
+        elseif typeof(v) == "function" then
+            local Success, Upvalues = pcall(getupvalues, v)
+            if Success and Upvalues then
+                for _, Upvalue in pairs(Upvalues) do
+                    if typeof(Upvalue) == "table" and Upvalue.WeaponStats then
+                        table.insert(WeaponObjects, Upvalue)
+                    end
+                end
+            end
+        end
+    end
+    return WeaponObjects
+end
+
+local function SetInstantEquipAndNoAnim(WeaponObject)
+    local WeaponStats = WeaponObject.WeaponStats
+    if typeof(WeaponStats) ~= "table" then return end
+    
+    pcall(function()
+        WeaponStats.EquipTime = 0.01
+
+        local Animator = WeaponObject.Animator
+        if Animator and WeaponObject.Animations and WeaponObject.Animations.equip then
+            for _, track in pairs(Animator:GetPlayingAnimationTracks()) do
+                if track.Animation.AnimationId == WeaponObject.Animations.equip.id then
+                    track:Stop()
+                    break
+                end
+            end
+        end
+    end)
+end
+
+task.spawn(function()
+    while true do
+        task.wait(0.0)
+        local ActiveWeapons = GetActiveWeaponObjects()
+        for _, Weapon in pairs(ActiveWeapons) do
+            SetInstantEquipAndNoAnim(Weapon)
+        end
+    end
+end)
+
+--Always Auto
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local PlayerScripts = LocalPlayer:WaitForChild("PlayerScripts")
+local WeaponFramework = PlayerScripts:WaitForChild("WeaponryFramework")
+
+local function GetActiveWeaponObjects()
+    local WeaponObjects = {}
+    for _, v in pairs(getsenv(WeaponFramework)) do
+        if typeof(v) == "table" and rawget(v, "WeaponStats") then
+            table.insert(WeaponObjects, v)
+        elseif typeof(v) == "function" then
+            local Success, Upvalues = pcall(getupvalues, v)
+            if Success and Upvalues then
+                for _, Upvalue in pairs(Upvalues) do
+                    if typeof(Upvalue) == "table" and Upvalue.WeaponStats then
+                        table.insert(WeaponObjects, Upvalue)
+                    end
+                end
+            end
+        end
+    end
+    return WeaponObjects
+end
+
+local function ForceWeaponAuto(WeaponObject)
+    local WeaponStats = WeaponObject.WeaponStats
+    if typeof(WeaponStats) ~= "table" then return end
+    
+    pcall(function()
+        WeaponStats.FireMode = {
+            Name = "Auto",
+            Round = 1
+        }
+    end)
+end
+
+task.spawn(function()
+    while true do
+        task.wait(0.5)
+        local ActiveWeapons = GetActiveWeaponObjects()
+        for _, Weapon in pairs(ActiveWeapons) do
+            ForceWeaponAuto(Weapon)
+        end
+    end
+end)
+
+--No Spread
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local PlayerScripts = LocalPlayer:WaitForChild("PlayerScripts")
+local WeaponFramework = PlayerScripts:WaitForChild("WeaponryFramework")
+
+local function GetActiveWeaponObjects()
+    local WeaponObjects = {}
+    for _, v in pairs(getsenv(WeaponFramework)) do
+        if typeof(v) == "table" and rawget(v, "WeaponStats") then
+            table.insert(WeaponObjects, v)
+        elseif typeof(v) == "function" then
+            local Success, Upvalues = pcall(getupvalues, v)
+            if Success and Upvalues then
+                for _, Upvalue in pairs(Upvalues) do
+                    if typeof(Upvalue) == "table" and Upvalue.WeaponStats then
+                        table.insert(WeaponObjects, Upvalue)
+                    end
+                end
+            end
+        end
+    end
+    return WeaponObjects
+end
+
+local function NeutralizeWeaponSpread(WeaponObject)
+    local WeaponStats = WeaponObject.WeaponStats
+    if typeof(WeaponStats) ~= "table" then return end
+    
+    pcall(function()
+        if WeaponStats.Spread and typeof(WeaponStats.Spread) == "table" then
+            local NoSpreadPattern = {}
+            for i = 1, #WeaponStats.Spread do
+                NoSpreadPattern[i] = Vector2.new(0, 0)
+            end
+            WeaponStats.Spread = NoSpreadPattern
+        else
+            WeaponStats.BaseAccuracy = 0
+            WeaponStats.BloomPerShot = 0
+            WeaponStats.BloomResetTime = 0
+            WeaponStats.MaxBloom = 0
+        end
+    end)
+end
+
+task.spawn(function()
+    while true do
+        task.wait(0.5)
+        local ActiveWeapons = GetActiveWeaponObjects()
+        for _, Weapon in pairs(ActiveWeapons) do
+            NeutralizeWeaponSpread(Weapon)
+        end
+    end
+end)
+
+--No Recoil
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local PlayerScripts = LocalPlayer:WaitForChild("PlayerScripts")
+local WeaponFramework = PlayerScripts:WaitForChild("WeaponryFramework")
+
+local function GetActiveWeaponObjects()
+    local WeaponObjects = {}
+    for _, v in pairs(getsenv(WeaponFramework)) do
+        if typeof(v) == "table" and rawget(v, "WeaponStats") then
+            table.insert(WeaponObjects, v)
+        elseif typeof(v) == "function" then
+            local Success, Upvalues = pcall(getupvalues, v)
+            if Success and Upvalues then
+                for _, Upvalue in pairs(Upvalues) do
+                    if typeof(Upvalue) == "table" and Upvalue.WeaponStats then
+                        table.insert(WeaponObjects, Upvalue)
+                    end
+                end
+            end
+        end
+    end
+    return WeaponObjects
+end
+
+local function NeutralizeWeaponRecoil(WeaponObject)
+    local WeaponStats = WeaponObject.WeaponStats
+    if typeof(WeaponStats) ~= "table" then return end
+    
+    pcall(function()
+        WeaponStats.RecoilData = {
+            x = { MinAngle=0, MaxAngle=0, Damper=0, Speed=0, ADSreduction=0 },
+            y = { MinAngle=0, MaxAngle=0, Damper=0, Speed=0, ADSreduction=0 },
+            z = { MinAngle=0, MaxAngle=0, Damper=0, Speed=0, ADSreduction=0 }
+        }
+    end)
+end
+
+task.spawn(function()
+    while true do
+        task.wait(0.5)
+        local ActiveWeapons = GetActiveWeaponObjects()
+        for _, Weapon in pairs(ActiveWeapons) do
+            NeutralizeWeaponRecoil(Weapon)
+        end
+    end
+end)
+
+--Always Auto
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local PlayerScripts = LocalPlayer:WaitForChild("PlayerScripts")
+local WeaponFramework = PlayerScripts:WaitForChild("WeaponryFramework")
+
+local function GetActiveWeaponObjects()
+    local WeaponObjects = {}
+    for _, v in pairs(getsenv(WeaponFramework)) do
+        if typeof(v) == "table" and rawget(v, "WeaponStats") then
+            table.insert(WeaponObjects, v)
+        elseif typeof(v) == "function" then
+            local Success, Upvalues = pcall(getupvalues, v)
+            if Success and Upvalues then
+                for _, Upvalue in pairs(Upvalues) do
+                    if typeof(Upvalue) == "table" and Upvalue.WeaponStats then
+                        table.insert(WeaponObjects, Upvalue)
+                    end
+                end
+            end
+        end
+    end
+    return WeaponObjects
+end
+
+local function ForceWeaponAuto(WeaponObject)
+    local WeaponStats = WeaponObject.WeaponStats
+    if typeof(WeaponStats) ~= "table" then return end
+    
+    pcall(function()
+        WeaponStats.FireMode = {
+            Name = "Auto",
+            Round = 1
+        }
+    end)
+end
+
+task.spawn(function()
+    while true do
+        task.wait(0.5)
+        local ActiveWeapons = GetActiveWeaponObjects()
+        for _, Weapon in pairs(ActiveWeapons) do
+            ForceWeaponAuto(Weapon)
+        end
+    end
+end)
